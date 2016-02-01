@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>WebGL Spinning Cube</title>
+<script type="text/javascript" src="../../js/webgl-utils.js"></script>
+<script type="text/javascript" src="../../js/webgl-debug.js"></script>
+<script type="text/javascript" src="../../js/gl-matrix.js"></script>
+<script type="x-shader/x-vertex" id="vertexShader">
+uniform mat4 uMVMatrix;
+uniform mat4 uProjMatrix;
+
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aUV;
+
+varying vec2 vUV;
+varying vec3 vNormal;
+varying vec3 vWorldPosition;
+
+void main()
+{
+  gl_Position = uProjMatrix * uMVMatrix * vec4(aPosition, 1.0);
+  vWorldPosition = (uMVMatrix * vec4(aPosition, 1.0)).xyz;
+  vNormal = mat3(uMVMatrix) * aNormal;
+  vUV = aUV;
+}
+</script>
+<script type="x-shader/x-fragment" id="fragmentShader">
+precision highp float;
+
+uniform vec3 uLightPosition;
+
+varying vec2 vUV;
+varying vec3 vNormal;
+varying vec3 vWorldPosition;
+
+void main()
+{
+  vec3 toLight = normalize(uLightPosition - vWorldPosition);
+  vec3 color = vec3(.8);
+  color *= max(0.0, dot(toLight, normalize(vNormal)));
+  gl_FragColor.rgb = color;
+  gl_FragColor.a = 1.0;
+}
+</script>
+<script type="text/javascript">
+var gGL;
+const gBytesPerFloat = 4;
+
+var log = function(msg) {
+  if (window.console && window.console.log) 
+  {
+    window.console.log(msg);
+  }
+}
+
+function error(msg) {
+  if (window.console && window.console.error) 
+  {
+    window.console.error(msg);
+  } 
+  else 
+  {
+    log(msg);
+  }
+}
+
+var makeCube = (function() {
+  var arrayBuffer = null;
+  var indexBuffer = null;
+  var numIndicies = 0;
+  var objXform = mat4.create();
+
+  return function makeCube(_width, _height, _depth)
+  {
+    var halfWidth = _width * 0.5;
+    var halfHeight = _height * 0.5;
+    var halfDepth = _depth * 0.5;
+
+    var verts = new Float32Array(
+        /*    x           y            z        u   v   Nx  Ny  Nz   */
+        [ // Front face
+          -halfWidth, -halfHeight, +halfDepth,  0,  0,  +0, +0, +1,
+          +halfWidth, -halfHeight, +halfDepth,  1,  0,  +0, +0, +1,
+          +halfWidth, +halfHeight, +halfDepth,  1,  1,  +0, +0, +1,
+          -halfWidth, +halfHeight, +halfDepth,  0,  1,  +0, +0, +1,
+
+          // Back face
+          +halfWidth, -halfHeight, -halfDepth,  0,  0,  +0, +0, -1,
+          -halfWidth, -halfHeight, -halfDepth,  1,  0,  +0, +0, -1,
+          -halfWidth, +halfHeight, -halfDepth,  1,  1,  +0, +0, -1,
+          +halfWidth, +halfHeight, -halfDepth,  0,  1,  +0, +0, -1,
+
+          // Right face
+          +halfWidth, -halfHeight, +halfDepth,  0,  0,  +1, +0, +0,
+          +halfWidth, -halfHeight, -halfDepth,  1,  0,  +1, +0, +0,
+          +halfWidth, +halfHeight, -halfDepth,  1,  1,  +1, +0, +0,
+          +halfWidth, +halfHeight, +halfDepth,  0,  1,  +1, +0, +0,
+
+          // Left face
+          -halfWidth, -halfHeight, +halfDepth,  0,  0,  -1, +0, +0,
+          -halfWidth, -halfHeight, -halfDepth,  1,  0,  -1, +0, +0,
+          -halfWidth, +halfHeight, -halfDepth,  1,  1,  -1, +0, +0,
+          -halfWidth, +halfHeight, +halfDepth,  0,  1,  -1, +0, +0,
+
+          // Top face
+          -halfWidth, +halfHeight, +halfDepth,  0,  0,  +0, +1, +0,
+          +halfWidth, +halfHeight, +halfDepth,  1,  0,  +0, +1, +0,
+          +halfWidth, +halfHeight, -halfDepth,  1,  1,  +0, +1, +0,
+          -halfWidth, +halfHeight, -halfDepth,  0,  1,  +0, +1, +0,
+
+          // Bottom face
+          +halfWidth, -halfHeight, -halfDepth,  0,  0,  +0, -1, +0,
+          -halfWidth, -halfHeight, -halfDepth,  1,  0,  +0, -1, +0,
+          -halfWidth, -halfHeight, +halfDepth,  1,  1,  +0, -1, +0,
+          +halfWidth, -halfHeight, +halfDepth,  0,  1,  +0, -1, +0,
+        ]);
+
+    var indicies = new Uint8Array(
+        [ 0, 1, 2, 0, 2, 3, // Front face
+          6, 7, 4, 4, 5, 6, // Back face
+          8, 9, 10, 8, 10, 11, // Right face
+          12, 15, 14, 14, 13, 12, // Left face
+          19, 16, 17, 18, 19, 17, // Top face
+          20, 23, 22, 22, 21, 20, // Bottom face
+        ]);
+
+    arrayBuffer = gGL.createBuffer();
+    gGL.bindBuffer(gGL.ARRAY_BUFFER, arrayBuffer);
+    gGL.bufferData(gGL.ARRAY_BUFFER, verts, gGL.STATIC_DRAW);
+    gGL.bindBuffer(gGL.ARRAY_BUFFER, null);
+    
+    indexBuffer = gGL.createBuffer();
+    gGL.bindBuffer(gGL.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gGL.bufferData(gGL.ELEMENT_ARRAY_BUFFER, indicies, gGL.STATIC_DRAW);
+    gGL.bindBuffer(gGL.ELEMENT_ARRAY_BUFFER, null);
+
+    numIndicies = indicies.length;
+
+    return Object.freeze({width: _width, height: _height, depth: _depth, xform: objXform,
+        draw: function(_viewMatrix, _program)
+        {
+            var modelView = mat4.create();
+            mat4.multiply(modelView, objXform, _viewMatrix);
+            gGL.uniformMatrix4fv(_program.getUniformLocation("uMVMatrix"), false, modelView);
+
+            gGL.bindBuffer(gGL.ARRAY_BUFFER, arrayBuffer);
+            gGL.bindBuffer(gGL.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+            // Position
+            gGL.enableVertexAttribArray(0);
+            gGL.vertexAttribPointer(0, 3, gGL.FLOAT, false, 8 * gBytesPerFloat, 0);
+
+            // UV
+            gGL.enableVertexAttribArray(1);
+            gGL.vertexAttribPointer(1, 2, gGL.FLOAT, false, 8 * gBytesPerFloat, 3 * gBytesPerFloat);
+
+            // Normal
+            gGL.enableVertexAttribArray(2);
+            gGL.vertexAttribPointer(2, 3, gGL.FLOAT, false, 8 * gBytesPerFloat, 5 * gBytesPerFloat);
+
+            gGL.drawElements(gGL.TRIANGLES, numIndicies, gGL.UNSIGNED_BYTE, 0);
+        }
+    });
+  };
+})();
+
+var createProgram = (function() {
+  var program = null;
+  var uniforms = {};
+
+  function loadShader(_shaderId, _shaderType)
+  {
+    var shaderElement = document.getElementById(_shaderId);
+    if (!shaderElement)
+    {
+      WebGLDebugUtils.error("Could not find shader " + _shaderId + "!");
+      return null;
+    }
+
+    var shader = gGL.createShader(_shaderType);
+    gGL.shaderSource(shader, shaderElement.text);
+    gGL.compileShader(shader);
+    if (!gGL.getShaderParameter(shader, gGL.COMPILE_STATUS) && !gGL.isContextLost())
+    {
+      error("Error compiling shader " + _shaderId + ": " + gGL.getShaderInfoLog(shader))
+      gGL.deleteShader(shader);
+      return null;
+    }
+
+    return shader;
+  }
+
+  return function createProgram(_vertexShaderId, _fragmentShaderId, _attributes)
+  {
+    var vertexShader = loadShader(_vertexShaderId, gGL.VERTEX_SHADER);
+    var fragmentShader = loadShader(_fragmentShaderId, gGL.FRAGMENT_SHADER);
+    if (!vertexShader || !fragmentShader)
+    {
+      return null;
+    }
+
+    program = gGL.createProgram();
+    gGL.attachShader(program, vertexShader);
+    gGL.attachShader(program, fragmentShader);
+
+    gGL.deleteShader(vertexShader);
+    gGL.deleteShader(fragmentShader);
+
+    for (var i = 0; i < _attributes.length; ++i)
+    {
+      gGL.bindAttribLocation(program, i, _attributes[i]);
+    }
+
+    gGL.linkProgram(program);
+    if (!gGL.getProgramParameter(program, gGL.LINK_STATUS) && !gGL.isContextLost())
+    {
+      error("Error linking program: " + gGL.getProgramInfoLog(program));
+      gGL.deleteProgram(program);
+      return null;
+    }
+
+    var numUniforms = gGL.getProgramParameter(program, gGL.ACTIVE_UNIFORMS);
+    for (var i = 0; i < numUniforms; ++i)
+    {
+      var uniformInfo = gGL.getActiveUniform(program, i);
+      uniforms[uniformInfo.name] = gGL.getUniformLocation(program, uniformInfo.name);
+    }
+
+    var returnObject = {glName: program};
+    returnObject.use = function()
+    {
+      gGL.useProgram(program);
+    }
+
+    returnObject.getUniformLocation = function(_name)
+    {
+      return uniforms[_name];
+    }
+
+    return Object.freeze(returnObject);
+  };
+})();
+
+var createGLContext = (function()
+{
+  var canvas = null;
+  var width = 0;
+  var height = 0;
+  var fov = 50;
+  var animationRequestId = null;
+
+  var viewMatrix = mat4.create();
+  var projMatrix = mat4.create();
+  var lightPosition = vec3.fromValues(2.0, 2.0, 0.5);
+  var cube = null;
+  var program = null;
+
+  function reshapeIfNeeded()
+  {
+    if (canvas.clientWidth === width && canvas.clientHeight === height)
+    {
+      return;
+    }
+
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    mat4.perspective(projMatrix, fov/180.0 * Math.PI, width / height, 0.01, 10.0);
+    gGL.viewport(0, 0, width, height);
+  }
+
+  function init()
+  {
+    var context = WebGLUtils.setupWebGL(canvas);
+    gGL = WebGLDebugUtils.makeDebugContext(context);
+    gGL.enable(gGL.CULL_FACE);
+    gGL.enable(gGL.DEPTH_TEST);
+    gGL.clearColor(0.5, 0, 0.5, 1);
+
+    cube = makeCube(1, 1, 1);
+    program = createProgram("vertexShader", "fragmentShader", ["aPosition", "aUV", "aNormal"]);
+  }
+
+  function handleContextLost(_exception)
+  {
+    _exception.preventDefault();
+    if (animationRequestId)
+    {
+      window.cancelAnimFrame(animationRequestId);
+      animationRequestId = null;
+    }
+  }
+
+  function handleContextRestored()
+  {
+    init();
+    start();
+  }
+
+  function drawFrame()
+  {
+    reshapeIfNeeded();
+
+    mat4.rotateY(viewMatrix, viewMatrix, 0.01);
+    gGL.bindFramebuffer(gGL.FRAMEBUFFER, null);
+    gGL.clear(gGL.COLOR_BUFFER_BIT | gGL.DEPTH_BUFFER_BIT);
+
+    program.use();
+    gGL.uniformMatrix4fv(program.getUniformLocation("uProjMatrix"), false, projMatrix);
+    gGL.uniform3fv(program.getUniformLocation("uLightPosition"), lightPosition);
+
+    cube.draw(viewMatrix, program);
+
+    animationRequestId = window.requestAnimFrame(drawFrame, canvas);
+  }
+
+  function start()
+  {
+    if (program)
+    {
+      drawFrame();
+    }
+  }
+
+  return function createGLContext(_canvas)
+  {
+    if (!_canvas)
+    {
+      error("Could not find glCanvas!");
+      return null;
+    }
+
+    canvas = _canvas;    
+    canvas.addEventListener('webglcontextlost', handleContextLost, false);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+    init();
+    mat4.lookAt(viewMatrix, 
+      vec3.fromValues(0.0, 1.0, 2.0), // eye
+      vec3.fromValues(0.0, 0.0, 0.0), // center
+      vec3.fromValues(0.0, 1.0, 0.0)); // up
+
+    return Object.freeze({startRendering: start});
+  }
+})();
+
+function main()
+{
+  var canvas = document.getElementById("glCanvas");
+  var context = createGLContext(canvas);
+  context.startRendering();
+}
+
+window.onload = main;
+</script>
+</head>
+<body>
+<div>
+<canvas id="glCanvas" width=640 height=480></canvas>
+</div>
+</body>
+</html>
