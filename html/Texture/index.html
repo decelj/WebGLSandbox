@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>WebGL Simple Texturing</title>
+<script type="text/javascript" src="../../js/webgl-utils.js"></script>
+<script type="text/javascript" src="../../js/webgl-debug.js"></script>
+<script type="text/javascript" src="../../js/gl-matrix.js"></script>
+<script type="text/javascript" src="../../js/webglHelpers.js"></script>
+<script type="x-shader/x-vertex" id="vertexShader">
+uniform mat4 uMVMatrix;
+uniform mat4 uProjMatrix;
+
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aUV;
+
+varying vec2 vUV;
+varying vec3 vNormal;
+varying vec3 vWorldPosition;
+
+void main()
+{
+  gl_Position = uProjMatrix * uMVMatrix * vec4(aPosition, 1.0);
+  vWorldPosition = (uMVMatrix * vec4(aPosition, 1.0)).xyz;
+  vNormal = mat3(uMVMatrix) * aNormal;
+  vUV = aUV;
+}
+</script>
+<script type="x-shader/x-fragment" id="fragmentShader">
+precision highp float;
+
+uniform vec3 uLightPosition;
+uniform sampler2D uTexture;
+
+varying vec2 vUV;
+varying vec3 vNormal;
+varying vec3 vWorldPosition;
+
+void main()
+{
+  vec3 toLight = normalize(uLightPosition - vWorldPosition);
+  vec3 color = texture2D(uTexture, vUV).rgb;
+  color *= max(0.0, dot(toLight, normalize(vNormal)));
+  gl_FragColor.rgb = color;
+  gl_FragColor.a = 1.0;
+}
+</script>
+<script type="text/javascript">
+var gGL;
+
+var createGLContext = (function()
+{
+  var canvas = null;
+  var width = 0;
+  var height = 0;
+  var fov = 50;
+  var animationRequestId = null;
+
+  var viewMatrix = mat4.create();
+  var projMatrix = mat4.create();
+  var lightPosition = vec3.fromValues(2.0, 2.0, 0.5);
+  var cube = null;
+  var program = null;
+  var texture = null;
+
+  function reshapeIfNeeded()
+  {
+    if (canvas.clientWidth === width && canvas.clientHeight === height)
+    {
+      return;
+    }
+
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    mat4.perspective(projMatrix, fov/180.0 * Math.PI, width / height, 0.01, 10.0);
+    gGL.viewport(0, 0, width, height);
+  }
+
+  function init()
+  {
+    var context = WebGLUtils.setupWebGL(canvas);
+    gGL = WebGLDebugUtils.makeDebugContext(context);
+    gGL.enable(gGL.CULL_FACE);
+    gGL.enable(gGL.DEPTH_TEST);
+    gGL.clearColor(0.5, 0, 0.5, 1);
+
+    cube = GLHelpers.makeCube(gGL, 1, 1, 1);
+    program = GLHelpers.createProgram(gGL, "vertexShader", "fragmentShader", 
+      ["aPosition", "aUV", "aNormal"]);
+    texture = GLHelpers.loadTexture(gGL, "../../images/uvLayout.jpg", gGL.RGB, gGL.LINEAR, gGL.LINEAR_MIPMAP_NEAREST)
+  }
+
+  function handleContextLost(_exception)
+  {
+    _exception.preventDefault();
+    if (animationRequestId)
+    {
+      window.cancelAnimFrame(animationRequestId);
+      animationRequestId = null;
+    }
+  }
+
+  function handleContextRestored()
+  {
+    init();
+    start();
+  }
+
+  function drawFrame()
+  {
+    reshapeIfNeeded();
+
+    mat4.rotateY(viewMatrix, viewMatrix, 0.01);
+    gGL.bindFramebuffer(gGL.FRAMEBUFFER, null);
+    gGL.clear(gGL.COLOR_BUFFER_BIT | gGL.DEPTH_BUFFER_BIT);
+
+    program.use(gGL);
+    gGL.uniformMatrix4fv(program.getUniformLocation("uProjMatrix"), false, projMatrix);
+    gGL.uniform3fv(program.getUniformLocation("uLightPosition"), lightPosition);
+
+    texture.bindToUnit(gGL, gGL.TEXTURE0);
+    gGL.uniform1i(program.getUniformLocation("uTexture"), 0);
+
+    cube.draw(gGL, viewMatrix, program);
+
+    animationRequestId = window.requestAnimFrame(drawFrame, canvas);
+  }
+
+  function start()
+  {
+    if (program)
+    {
+      drawFrame();
+    }
+  }
+
+  return function createGLContext(_canvas)
+  {
+    if (!_canvas)
+    {
+      GLHelpers.error("Could not find glCanvas!");
+      return null;
+    }
+
+    canvas = _canvas;    
+    canvas.addEventListener('webglcontextlost', handleContextLost, false);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+    init();
+    mat4.lookAt(viewMatrix, 
+      vec3.fromValues(0.0, 1.0, 2.0), // eye
+      vec3.fromValues(0.0, 0.0, 0.0), // center
+      vec3.fromValues(0.0, 1.0, 0.0)); // up
+
+    return Object.freeze({startRendering: start});
+  }
+})();
+
+function main()
+{
+  var canvas = document.getElementById("glCanvas");
+  var context = createGLContext(canvas);
+  context.startRendering();
+}
+
+window.onload = main;
+</script>
+</head>
+<body>
+<div>
+<canvas id="glCanvas" width=640 height=480></canvas>
+</div>
+</body>
+</html>
