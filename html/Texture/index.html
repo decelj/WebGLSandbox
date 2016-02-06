@@ -84,10 +84,10 @@ var createGLContext = (function()
     gGL.enable(gGL.DEPTH_TEST);
     gGL.clearColor(0.5, 0, 0.5, 1);
 
-    cube = GLHelpers.makeCube(gGL, 1, 1, 1);
-    program = GLHelpers.createProgram(gGL, "vertexShader", "fragmentShader", 
+    cube = new GLHelpers.Cube(gGL, 1, 1, 1);
+    program = new GLHelpers.Program(gGL, "vertexShader", "fragmentShader", 
       ["aPosition", "aUV", "aNormal"]);
-    texture = GLHelpers.loadTexture(gGL, "../../images/uvLayout.jpg", gGL.RGB, gGL.LINEAR, gGL.LINEAR_MIPMAP_NEAREST)
+    texture = new GLHelpers.Texture(gGL, gGL.RGB, gGL.LINEAR, gGL.LINEAR_MIPMAP_NEAREST, "../../images/uvLayout.jpg");
   }
 
   function handleContextLost(_exception)
@@ -114,14 +114,14 @@ var createGLContext = (function()
     gGL.bindFramebuffer(gGL.FRAMEBUFFER, null);
     gGL.clear(gGL.COLOR_BUFFER_BIT | gGL.DEPTH_BUFFER_BIT);
 
-    program.use(gGL);
+    program.use();
     gGL.uniformMatrix4fv(program.getUniformLocation("uProjMatrix"), false, projMatrix);
     gGL.uniform3fv(program.getUniformLocation("uLightPosition"), lightPosition);
 
-    texture.bindToUnit(gGL, gGL.TEXTURE0);
+    texture.bindToUnit(gGL.TEXTURE0);
     gGL.uniform1i(program.getUniformLocation("uTexture"), 0);
 
-    cube.draw(gGL, viewMatrix, program);
+    cube.draw(viewMatrix, program);
 
     animationRequestId = window.requestAnimFrame(drawFrame, canvas);
   }
